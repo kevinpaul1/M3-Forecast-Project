@@ -1,0 +1,1717 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(Mcomp)
+library(forecast)
+library(ggplot2)
+library(lmtest)
+library(car)
+library(Metrics)
+library(smooth)
+library(tseries)
+library(flexmix)
+```
+
+
+#regression
+```{r}
+y <- M3[[1355]]
+
+M3[[1355]]
+y$type
+y$period
+y$description
+
+
+in_sample <- y$x
+out_sample <- y$xx
+plot(in_sample)
+
+```
+
+```{r}
+dy <- decompose(in_sample, type = "additive")
+plot(dy)
+```
+
+```{r}
+fit_reg_model1 <- tslm(in_sample ~ season + trend)
+summary(fit_reg_model1)
+
+vif(fit_reg_model1)
+dwtest(fit_reg_model1)
+shapiro.test(fit_reg_model1$residuals)
+bptest(fit_reg_model1)
+```
+
+```{r}
+
+diff_data <- diff(in_sample,differences = 1)
+plot(diff_data)
+
+fit_reg_model2 <- tslm(diff_data ~ trend+season)
+summary(fit_reg_model2)
+
+vif(fit_reg_model2)
+dwtest(fit_reg_model2)
+shapiro.test(fit_reg_model2$residuals)
+bptest(fit_reg_model2)
+
+diff_out_sample <- diff(out_sample,differences = 1)
+
+plot(forecast(fit_reg_model2, h=8, level = c(0.80,0.90,0.95,0.99)),xlim = c(1977,1995+1/4),ylim = c(-400,500), xlab = "Time", ylab = "Data")
+lines(diff_out_sample, lty=2, lwd=2)
+legend("topleft",c("Historical Data","Future Data","Regression forecast"),
+       col = c("black","black","blue"),
+       lwd=c(1,2,1), lty = c(1,2,1) ,cex = 0.8)
+
+```
+
+
+#Exponential Smoothing Model
+
+```{r}
+dy <- decompose(in_sample, type = "additive")
+plot(dy)
+
+lambda = BoxCox.lambda(in_sample,lower = 0,upper = 1)
+by = BoxCox(in_sample, lambda)
+dy_stl_auto = mstl(by)
+plot(dy_stl_auto, main = "STL Decomposition")
+
+acf(in_sample)
+pacf(in_sample)
+
+autoplot(trendcycle(dy_stl_auto),ylab="In-sample data", main="Trend-Cycle Component")
+
+```
+
+
+```{r}
+
+diff_d <- diff(in_sample,differences = 1)
+
+fit22 <- ets(diff_d)
+
+
+fit_exp_model0 <- ets(in_sample)
+summary(fit_exp_model1)
+
+fit_ses <- ses(in_sample)
+summary(fit_ses)
+
+fit_exp_model1 <- ets(in_sample, model="MMM", damped = FALSE)
+summary(fit_exp_model1) 
+
+fit_exp_model2 <- ets(in_sample, model="ANN") #ses
+summary(fit_exp_model2) 
+
+fit_exp_model3 <- ets(in_sample, model="AAN") #Holt’s (linear trend) Exponential Smoothing
+summary(fit_exp_model3)  
+
+fit_exp_model4 <- ets(in_sample, model="AAN", damped = TRUE)
+summary(fit_exp_model4) 
+
+fit_exp_model5 <- ets(in_sample, model="AAA", damped = TRUE) #Holt-Winter’s Exponential Smoothing (additive seasonality)
+summary(fit_exp_model5) 
+
+fit_exp_model6 <- ets(in_sample, model="MMM", damped = TRUE) 
+summary(fit_exp_model6) 
+
+fit_exp_model6 <- ets(in_sample, model="MAM", damped = TRUE) 
+summary(fit_exp_model6) 
+
+fit_exp_model7 <- ets(in_sample, model="MAA", damped = TRUE) 
+summary(fit_exp_model7) 
+
+fit_exp_model8 <- ets(in_sample, model="MAA", damped = FALSE) 
+summary(fit_exp_model8) 
+
+fit_exp_model9 <- ets(in_sample, model="AAA", damped = FALSE) 
+summary(fit_exp_model9) 
+
+fit_exp_model10 <- ets(in_sample, model="MNN", damped = FALSE) 
+summary(fit_exp_model10) 
+
+fit_exp_model11 <- ets(in_sample, model="MMN", damped = TRUE) 
+summary(fit_exp_model11) 
+
+fit_exp_model12 <- ets(in_sample, model="MAN", damped = FALSE) 
+summary(fit_exp_model12) 
+
+fit_exp_model13 <- ets(in_sample, model="MMM", damped = TRUE) 
+summary(fit_exp_model13) 
+
+BIC(fit_exp_model7)
+
+```
+
+```{r}
+#optimize parameters
+
+ets_opt <- function(pars, y){
+  n <- length(y)
+  f <- array(0, n)
+  f[1] <- pars[1]
+  
+  for (i in 1:(n-1)){
+    f[i+1] <- pars[2] * y[i] + (1-pars[2]) * f[i]
+  }
+
+  MSE <- mean((in_sample - f)^2)
+  MSE
+}
+alpha <- 0.4
+phi <- 0.98
+level_0 <- y[1]
+optim(c(level_0, alpha),ets_opt ,y=in_sample)
+optim(c(level_0, phi),ets_opt ,y=in_sample)
+```
+
+
+```{r}
+
+ets_forecast_model7 <- forecast(fit_exp_model7, h=8)
+ets_accuracy = mean(out_sample - ets_forecast_model7$mean)
+ets_accuracy
+
+forecast::accuracy(ets_forecast_model7,out_sample)
+
+forecast::accuracy(forecast(fit_exp_model6,h=8),out_sample)
+
+plot(forecast(fit_exp_model7, h =8, level = c(0.80,0.90,0.95,0.99)), xlim=c(1977,1995+1/4),ylim=c(3300,6100))
+lines(fit_exp_model7$fitted, col= "orange",lwd=2,lty=2)
+lines(out_sample,lwd=2,lty=2)
+legend("topleft",c("Historical Data","Fitted values","Future Data","ETS(M,Ad,A)"),
+       col = c("black","orange","black","blue"),
+       lwd=c(1,2,2,1), lty = c(1,2,2,1) ,cex = 0.8)
+
+plot(fit_exp_model7)
+
+qqnorm(fit_exp_model7$residuals)
+qqline(fit_exp_model7$residuals,col="red")
+
+```
+
+```{r}
+new_fit_exp_model7 <- ets(in_sample, model = "MAA", damped = TRUE, alpha = 0.461)
+summary(new_ets_forecast_model7)
+new_ets_forecast_model7 <- forecast(new_fit_exp_model7, h=8)
+
+
+new_ets_accuracy = mean(out_sample - new_ets_forecast_model7$mean)
+new_ets_accuracy
+
+forecast::accuracy(new_ets_forecast_model7,out_sample)
+
+
+plot(forecast(new_fit_exp_model7, h =8, level = c(0.80,0.90,0.95,0.99)), xlim=c(1977,1995+1/4),ylim=c(3300,6100))
+lines(new_fit_exp_model7$fitted, col= "orange",lwd=2,lty=2)
+lines(out_sample,lwd=2,lty=2)
+legend("topleft",c("Historical Data","Fitted values","Future Data","ETS(M,Ad,A)"),
+       col = c("black","orange","black","blue"),
+       lwd=c(1,2,2,1), lty = c(1,2,2,1) ,cex = 0.8)
+
+plot(fit_exp_model7)
+
+qqnorm(new_fit_exp_model7$residuals)
+qqline(new_fit_exp_model7$residuals,col="red")
+
+```
+
+
+```{r}
+#residual diagnostics - es
+
+fit_exp_model7_es <- es(in_sample,model = "MAdA",h=8)
+fit_exp_model7_es
+
+plot(forecast(fit_exp_model7_es, h=8))
+plot(fit_exp_model7_es)
+```
+
+
+#ARIMA
+
+
+```{r}
+tsdisplay(in_sample)
+
+adf.test(in_sample)
+
+```
+
+```{r}
+diff_data_first <- diff(diff(in_sample,differences = 4),1)
+plot(diff_data_first)
+
+tsdisplay(diff_data_first)
+adf.test(diff_data_first)
+```
+
+```{r}
+#for evaluating moving averages
+
+
+MA <- array(NA, length(in_sample))
+MA2 <- array(NA, length(in_sample))
+
+k <- 0.3
+m <- k %/% 2
+MA <- array(NA, length(y))
+for (i in (m + 1):(length(y) - m)){
+  MA[i] <- mean(y[(i-m):(i+m)])
+}
+MA
+k <- 0.4
+m <- k %/% 2
+MA2 <- array(NA, length(y))
+for (i in (m + 1):(length(y) - m)){
+  MA2[i] = mean(c(y[(i-m):(i+m-1)], y[(i-m+1):(i+m)]))
+}
+MA2
+
+plot(y)
+lines(ts(MA, start=start(y)), col="red")
+lines(ts(MA2, start=start(y)), col="blue")
+legend("topleft", c("Data", "MA(3)", "MA(4)"), col=c("black", "red", "blue"),
+       lty=1)
+
+
+
+
+
+
+```
+
+
+
+```{r}
+fit_arima_model1 <- arima(in_sample, order = c(0,1,1), seasonal = c(0,1,1))
+summary(fit_arima_model1)
+
+fit_arima_model2 <- arima(in_sample, order = c(1,1,0), seasonal = c(1,1,0))
+summary(fit_arima_model2)
+
+AICc(fit_arima_model1)
+AICc(fit_arima_model2)
+
+
+Box.test(residuals(fit_arima_model2), type="Ljung-Box")
+tsdisplay(residuals(fit_arima_model2))
+checkresiduals(fit_arima_model2)
+
+arima_forecast <- forecast(fit_arima_model2,h=8)
+arima_forecast_eg <- forecast(fit_arima_model1,h=8)
+
+plot(forecast(fit_arima_model2,h=8, level = c(0.80,0.90,0.95,0.99)), xlim=c(1977,1995+1/4),ylim=c(3300,6100),xlab = "Year", ylab = "Data")
+lines(arima_forecast$fitted, col= "orange", lwd=2, lty=2)
+lines(out_sample,lwd=2,lty=2)
+legend("topleft",c("Historical Data","Fitted values","Future Data","ARIMA(1,1,0)(1,1,0)"),
+       col = c("black","orange","black","blue"),
+       lwd=c(1,2,2,1), lty = c(1,2,2,1) ,cex = 0.8)
+
+
+
+fit_arima_model1_acc <- mean(out_sample - arima_forecast$mean)/100
+
+```
+
+#Batch Forecasting
+
+```{r}
+a= 702
+while (a<=1392) {
+  y <- M3[[a]]$type
+  print(y)
+  a=a+10
+}
+```
+
+
+#model selection strategy validation - h=8
+
+```{r}
+
+
+a=702
+horizon <- 8
+mase_array_ss <- array(0,2)
+bic_array_ss <- array(0,2)
+ts_ets_list <- array(0,c(70,5))
+ts_arima_list <- array(0,c(70,5))
+ts_final_list <- array(0,c(70,5))
+count=1
+no_ets_valid = 0 #to know how many ts are ets
+no_arima_valid = 0 #to know how many are arima
+while (a<=1392 & count<=70) {
+  b_in_sample <- M3[[a]]$x
+  yt <- head(b_in_sample,length(b_in_sample)-horizon)
+  yv <- tail(b_in_sample,horizon)
+  ets_count = 0
+  arima_count = 0
+  FCs_ss <- array(0,c(2,horizon))
+  bic_ss <- array(0,c(2,1))
+  for(m in 1:2){
+    if(m==1){
+      fit<-ets(yt)
+      bic_ss[m,] <- BIC(fit)
+    }else if(m==2){
+      fit<-auto.arima(yt)
+      bic_ss[m,] <- BIC(fit)
+    }
+    FCs_ss[m,]<-(forecast(fit,h=horizon)$mean)
+  }
+  
+  MAPEs_in <- array(0,2)
+  MASEs_in <- array(0,2)
+  sMAPE_in <- array(0,2)
+  bic_in <- array(0,2)
+  ts_ets_list[count,] = a
+  ts_arima_list[count,] = a 
+  for(m in 1:2){
+    MAPEs_in[m] <- mape(yv,FCs_ss[m,])
+    MASEs_in[m] <- mase(yv,FCs_ss[m,])
+    sMAPE_in[m] <- smape(yv,FCs_ss[m,])
+    if(m==1){
+      ts_ets_list[count,2] = MAPEs_in[m]
+      ts_ets_list[count,3] = MASEs_in[m]
+      ts_ets_list[count,4] = sMAPE_in[m]
+      ts_ets_list[count,5] = bic_ss[m,]
+    }else{
+      ts_arima_list[count,2] = MAPEs_in[m]
+      ts_arima_list[count,3] = MASEs_in[m]
+      ts_arima_list[count,4] = sMAPE_in[m]
+      ts_arima_list[count,5] = bic_ss[m,]
+    }
+  }
+  for(m in 2:5){
+    if(ts_ets_list[count,m] < ts_arima_list[count,m]){
+      ets_count = ets_count + 1
+    }else{
+      arima_count = arima_count + 1
+    }
+  }
+  if(ets_count > arima_count){
+    ts_final_list[count,1] = "ETS"
+  }else{
+    ts_final_list[count,1] = "ARIMA"
+  }
+  for(m in 2:5){
+    if(ts_final_list[count,1] == "ETS"){
+      ts_final_list[count,m] = ts_ets_list[count,m]
+    }else{
+      ts_final_list[count,m] = ts_arima_list[count,m]
+    }
+  }
+
+  count=count + 1
+  a=a+10
+}
+
+for(m in 1:70){
+  if(ts_final_list[m,1] == "ETS"){
+    no_ets_valid = no_ets_valid + 1
+  }else{
+    no_arima_valid = no_arima_valid + 1
+  }
+}
+
+
+```
+
+#trial of selection strat - h=8
+```{r}
+
+a=702
+horizon <- 8
+mase_array_ss <- array(0,2)
+bic_array_ss <- array(0,2)
+ts_ets_list <- array(0,c(70,5))
+ts_arima_list <- array(0,c(70,5))
+ts_final_list <- array(0,c(70,5))
+count=1
+no_ets = 0 #to know how many ts are ets
+no_arima = 0 #to know how many are arima
+while (a<=1392 & count<=70) {
+  b_in_sample <- M3[[a]]$x
+  b_out_sample <- M3[[a]]$xx
+  ets_count = 0
+  arima_count = 0
+  FCs_ss <- array(0,c(2,horizon))
+  bic_ss <- array(0,c(2,1))
+  for(m in 1:2){
+    if(m==1){
+      fit<-ets(b_in_sample)
+      bic_ss[m,] <- BIC(fit)
+    }else if(m==2){
+      fit<-auto.arima(b_in_sample)
+      bic_ss[m,] <- BIC(fit)
+    }
+    FCs_ss[m,]<-(forecast(fit,h=horizon)$mean)
+  }
+  
+
+  MAPEs_in <- array(0,2)
+  MASEs_in <- array(0,2)
+  sMAPE_in <- array(0,2)
+  bic_in <- array(0,2)
+  ts_ets_list[count,] = a
+  ts_arima_list[count,] = a 
+  for(m in 1:2){
+    MAPEs_in[m] <- mape(b_out_sample,FCs_ss[m,])
+    MASEs_in[m] <- mase(b_out_sample,FCs_ss[m,])
+    sMAPE_in[m] <- smape(b_out_sample,FCs_ss[m,])
+    if(m==1){
+      ts_ets_list[count,2] = MAPEs_in[m]
+      ts_ets_list[count,3] = MASEs_in[m]
+      ts_ets_list[count,4] = sMAPE_in[m]
+      ts_ets_list[count,5] = bic_ss[m,]
+    }else{
+      ts_arima_list[count,2] = MAPEs_in[m]
+      ts_arima_list[count,3] = MASEs_in[m]
+      ts_arima_list[count,4] = sMAPE_in[m]
+      ts_arima_list[count,5] = bic_ss[m,]
+    }
+  }
+  for(m in 2:5){
+    if(ts_ets_list[count,m] < ts_arima_list[count,m]){
+      ets_count = ets_count + 1
+    }else{
+      arima_count = arima_count + 1
+    }
+  }
+  if(ets_count > arima_count){
+    ts_final_list[count,1] = "ETS"
+  }else{
+    ts_final_list[count,1] = "ARIMA"
+  }
+  for(m in 2:5){
+    if(ts_final_list[count,1] == "ETS"){
+      ts_final_list[count,m] = ts_ets_list[count,m]
+    }else{
+      ts_final_list[count,m] = ts_arima_list[count,m]
+    }
+  }
+
+  count=count + 1
+  a=a+10
+}
+
+for(m in 1:70){
+  if(ts_final_list[m,1] == "ETS"){
+    no_ets = no_ets + 1
+  }else{
+    no_arima = no_arima + 1
+  }
+}
+
+```
+
+#validation h=2
+```{r}
+a=702
+horizon <- 2
+mase_array_ss <- array(0,2)
+bic_array_ss <- array(0,2)
+ts_ets_list <- array(0,c(70,5))
+ts_arima_list <- array(0,c(70,5))
+ts_final_list <- array(0,c(70,5))
+count=1
+no_ets_valid = 0 #to know how many ts are ets
+no_arima_valid = 0 #to know how many are arima
+while (a<=1392 & count<=70) {
+  b_in_sample <- M3[[a]]$x
+  yt <- head(b_in_sample,length(b_in_sample)-horizon)
+  yv <- tail(b_in_sample,horizon)
+  ets_count = 0
+  arima_count = 0
+  FCs_ss <- array(0,c(2,horizon))
+  bic_ss <- array(0,c(2,1))
+  for(m in 1:2){
+    if(m==1){
+      fit<-ets(yt)
+      bic_ss[m,] <- BIC(fit)
+    }else if(m==2){
+      fit<-auto.arima(yt)
+      bic_ss[m,] <- BIC(fit)
+    }
+    FCs_ss[m,]<-(forecast(fit,h=horizon)$mean)
+  }
+  
+  MAPEs_in <- array(0,2)
+  MASEs_in <- array(0,2)
+  sMAPE_in <- array(0,2)
+  bic_in <- array(0,2)
+  ts_ets_list[count,] = a
+  ts_arima_list[count,] = a 
+  for(m in 1:2){
+    MAPEs_in[m] <- mape(yv,FCs_ss[m,])
+    MASEs_in[m] <- mase(yv,FCs_ss[m,])
+    sMAPE_in[m] <- smape(yv,FCs_ss[m,])
+    if(m==1){
+      ts_ets_list[count,2] = MAPEs_in[m]
+      ts_ets_list[count,3] = MASEs_in[m]
+      ts_ets_list[count,4] = sMAPE_in[m]
+      ts_ets_list[count,5] = bic_ss[m,]
+    }else{
+      ts_arima_list[count,2] = MAPEs_in[m]
+      ts_arima_list[count,3] = MASEs_in[m]
+      ts_arima_list[count,4] = sMAPE_in[m]
+      ts_arima_list[count,5] = bic_ss[m,]
+    }
+  }
+  for(m in 2:5){
+    if(ts_ets_list[count,m] < ts_arima_list[count,m]){
+      ets_count = ets_count + 1
+    }else{
+      arima_count = arima_count + 1
+    }
+  }
+  if(ets_count > arima_count){
+    ts_final_list[count,1] = "ETS"
+  }else{
+    ts_final_list[count,1] = "ARIMA"
+  }
+  for(m in 2:5){
+    if(ts_final_list[count,1] == "ETS"){
+      ts_final_list[count,m] = ts_ets_list[count,m]
+    }else{
+      ts_final_list[count,m] = ts_arima_list[count,m]
+    }
+  }
+
+  count=count + 1
+  a=a+10
+}
+
+for(m in 1:70){
+  if(ts_final_list[m,1] == "ETS"){
+    no_ets_valid = no_ets_valid + 1
+  }else{
+    no_arima_valid = no_arima_valid + 1
+  }
+}
+
+```
+
+#trial h=2
+```{r}
+a=702
+horizon <- 2
+mase_array_ss <- array(0,2)
+bic_array_ss <- array(0,2)
+ts_ets_list <- array(0,c(70,5))
+ts_arima_list <- array(0,c(70,5))
+ts_final_list <- array(0,c(70,5))
+count=1
+no_ets = 0 #to know how many ts are ets
+no_arima = 0 #to know how many are arima
+while (a<=1392 & count<=70) {
+  b_in_sample <- M3[[a]]$x
+  b_out_sample <- M3[[a]]$xx
+  ets_count = 0
+  arima_count = 0
+  FCs_ss <- array(0,c(2,horizon))
+  bic_ss <- array(0,c(2,1))
+  for(m in 1:2){
+    if(m==1){
+      fit<-ets(b_in_sample)
+      bic_ss[m,] <- BIC(fit)
+    }else if(m==2){
+      fit<-auto.arima(b_in_sample)
+      bic_ss[m,] <- BIC(fit)
+    }
+    FCs_ss[m,]<-(forecast(fit,h=horizon)$mean)
+  }
+  
+
+  MAPEs_in <- array(0,2)
+  MASEs_in <- array(0,2)
+  sMAPE_in <- array(0,2)
+  bic_in <- array(0,2)
+  ts_ets_list[count,] = a
+  ts_arima_list[count,] = a 
+  for(m in 1:2){
+    MAPEs_in[m] <- mape(b_out_sample,FCs_ss[m,])
+    MASEs_in[m] <- mase(b_out_sample,FCs_ss[m,])
+    sMAPE_in[m] <- smape(b_out_sample,FCs_ss[m,])
+    if(m==1){
+      ts_ets_list[count,2] = MAPEs_in[m]
+      ts_ets_list[count,3] = MASEs_in[m]
+      ts_ets_list[count,4] = sMAPE_in[m]
+      ts_ets_list[count,5] = bic_ss[m,]
+    }else{
+      ts_arima_list[count,2] = MAPEs_in[m]
+      ts_arima_list[count,3] = MASEs_in[m]
+      ts_arima_list[count,4] = sMAPE_in[m]
+      ts_arima_list[count,5] = bic_ss[m,]
+    }
+  }
+  for(m in 2:5){
+    if(ts_ets_list[count,m] < ts_arima_list[count,m]){
+      ets_count = ets_count + 1
+    }else{
+      arima_count = arima_count + 1
+    }
+  }
+  if(ets_count > arima_count){
+    ts_final_list[count,1] = "ETS"
+  }else{
+    ts_final_list[count,1] = "ARIMA"
+  }
+  for(m in 2:5){
+    if(ts_final_list[count,1] == "ETS"){
+      ts_final_list[count,m] = ts_ets_list[count,m]
+    }else{
+      ts_final_list[count,m] = ts_arima_list[count,m]
+    }
+  }
+
+  count=count + 1
+  a=a+10
+}
+
+for(m in 1:70){
+  if(ts_final_list[m,1] == "ETS"){
+    no_ets = no_ets + 1
+  }else{
+    no_arima = no_arima + 1
+  }
+}
+```
+
+#validation h=4
+```{r}
+a=702
+horizon <- 8
+mase_array_ss <- array(0,2)
+bic_array_ss <- array(0,2)
+ts_ets_list <- array(0,c(70,5))
+ts_arima_list <- array(0,c(70,5))
+ts_final_list <- array(0,c(70,5))
+count=1
+no_ets_valid = 0 #to know how many ts are ets
+no_arima_valid = 0 #to know how many are arima
+while (a<=1392 & count<=70) {
+  b_in_sample <- M3[[a]]$x
+  yt <- head(b_in_sample,length(b_in_sample)-horizon)
+  yv <- tail(b_in_sample,horizon)
+  ets_count = 0
+  arima_count = 0
+  FCs_ss <- array(0,c(2,horizon))
+  bic_ss <- array(0,c(2,1))
+  for(m in 1:2){
+    if(m==1){
+      fit<-ets(yt)
+      bic_ss[m,] <- BIC(fit)
+    }else if(m==2){
+      fit<-auto.arima(yt)
+      bic_ss[m,] <- BIC(fit)
+    }
+    FCs_ss[m,]<-(forecast(fit,h=horizon)$mean)
+  }
+  
+  MAPEs_in <- array(0,2)
+  MASEs_in <- array(0,2)
+  sMAPE_in <- array(0,2)
+  bic_in <- array(0,2)
+  ts_ets_list[count,] = a
+  ts_arima_list[count,] = a 
+  for(m in 1:2){
+    MAPEs_in[m] <- mape(yv,FCs_ss[m,])
+    MASEs_in[m] <- mase(yv,FCs_ss[m,])
+    sMAPE_in[m] <- smape(yv,FCs_ss[m,])
+    if(m==1){
+      ts_ets_list[count,2] = MAPEs_in[m]
+      ts_ets_list[count,3] = MASEs_in[m]
+      ts_ets_list[count,4] = sMAPE_in[m]
+      ts_ets_list[count,5] = bic_ss[m,]
+    }else{
+      ts_arima_list[count,2] = MAPEs_in[m]
+      ts_arima_list[count,3] = MASEs_in[m]
+      ts_arima_list[count,4] = sMAPE_in[m]
+      ts_arima_list[count,5] = bic_ss[m,]
+    }
+  }
+  for(m in 2:5){
+    if(ts_ets_list[count,m] < ts_arima_list[count,m]){
+      ets_count = ets_count + 1
+    }else{
+      arima_count = arima_count + 1
+    }
+  }
+  if(ets_count > arima_count){
+    ts_final_list[count,1] = "ETS"
+  }else{
+    ts_final_list[count,1] = "ARIMA"
+  }
+  for(m in 2:5){
+    if(ts_final_list[count,1] == "ETS"){
+      ts_final_list[count,m] = ts_ets_list[count,m]
+    }else{
+      ts_final_list[count,m] = ts_arima_list[count,m]
+    }
+  }
+
+  count=count + 1
+  a=a+10
+}
+
+for(m in 1:70){
+  if(ts_final_list[m,1] == "ETS"){
+    no_ets_valid = no_ets_valid + 1
+  }else{
+    no_arima_valid = no_arima_valid + 1
+  }
+}
+
+```
+
+
+#trial h=4
+```{r}
+a=702
+horizon <- 8
+mase_array_ss <- array(0,2)
+bic_array_ss <- array(0,2)
+ts_ets_list <- array(0,c(70,5))
+ts_arima_list <- array(0,c(70,5))
+ts_final_list <- array(0,c(70,5))
+count=1
+no_ets = 0 #to know how many ts are ets
+no_arima = 0 #to know how many are arima
+while (a<=1392 & count<=70) {
+  b_in_sample <- M3[[a]]$x
+  b_out_sample <- M3[[a]]$xx
+  ets_count = 0
+  arima_count = 0
+  FCs_ss <- array(0,c(2,horizon))
+  bic_ss <- array(0,c(2,1))
+  for(m in 1:2){
+    if(m==1){
+      fit<-ets(b_in_sample)
+      bic_ss[m,] <- BIC(fit)
+    }else if(m==2){
+      fit<-auto.arima(b_in_sample)
+      bic_ss[m,] <- BIC(fit)
+    }
+    FCs_ss[m,]<-(forecast(fit,h=horizon)$mean)
+  }
+  
+
+  MAPEs_in <- array(0,2)
+  MASEs_in <- array(0,2)
+  sMAPE_in <- array(0,2)
+  bic_in <- array(0,2)
+  ts_ets_list[count,] = a
+  ts_arima_list[count,] = a 
+  for(m in 1:2){
+    MAPEs_in[m] <- mape(b_out_sample,FCs_ss[m,])
+    MASEs_in[m] <- mase(b_out_sample,FCs_ss[m,])
+    sMAPE_in[m] <- smape(b_out_sample,FCs_ss[m,])
+    if(m==1){
+      ts_ets_list[count,2] = MAPEs_in[m]
+      ts_ets_list[count,3] = MASEs_in[m]
+      ts_ets_list[count,4] = sMAPE_in[m]
+      ts_ets_list[count,5] = bic_ss[m,]
+    }else{
+      ts_arima_list[count,2] = MAPEs_in[m]
+      ts_arima_list[count,3] = MASEs_in[m]
+      ts_arima_list[count,4] = sMAPE_in[m]
+      ts_arima_list[count,5] = bic_ss[m,]
+    }
+  }
+  for(m in 2:5){
+    if(ts_ets_list[count,m] < ts_arima_list[count,m]){
+      ets_count = ets_count + 1
+    }else{
+      arima_count = arima_count + 1
+    }
+  }
+  if(ets_count > arima_count){
+    ts_final_list[count,1] = "ETS"
+  }else{
+    ts_final_list[count,1] = "ARIMA"
+  }
+  for(m in 2:5){
+    if(ts_final_list[count,1] == "ETS"){
+      ts_final_list[count,m] = ts_ets_list[count,m]
+    }else{
+      ts_final_list[count,m] = ts_arima_list[count,m]
+    }
+  }
+
+  count=count + 1
+  a=a+10
+}
+
+for(m in 1:70){
+  if(ts_final_list[m,1] == "ETS"){
+    no_ets = no_ets + 1
+  }else{
+    no_arima = no_arima + 1
+  }
+}
+```
+
+#validation h=6
+```{r}
+a=702
+horizon <- 8
+mase_array_ss <- array(0,2)
+bic_array_ss <- array(0,2)
+ts_ets_list <- array(0,c(70,5))
+ts_arima_list <- array(0,c(70,5))
+ts_final_list <- array(0,c(70,5))
+count=1
+no_ets_valid = 0 #to know how many ts are ets
+no_arima_valid = 0 #to know how many are arima
+while (a<=1392 & count<=70) {
+  b_in_sample <- M3[[a]]$x
+  yt <- head(b_in_sample,length(b_in_sample)-horizon)
+  yv <- tail(b_in_sample,horizon)
+  ets_count = 0
+  arima_count = 0
+  FCs_ss <- array(0,c(2,horizon))
+  bic_ss <- array(0,c(2,1))
+  for(m in 1:2){
+    if(m==1){
+      fit<-ets(yt)
+      bic_ss[m,] <- BIC(fit)
+    }else if(m==2){
+      fit<-auto.arima(yt)
+      bic_ss[m,] <- BIC(fit)
+    }
+    FCs_ss[m,]<-(forecast(fit,h=horizon)$mean)
+  }
+  
+  MAPEs_in <- array(0,2)
+  MASEs_in <- array(0,2)
+  sMAPE_in <- array(0,2)
+  bic_in <- array(0,2)
+  ts_ets_list[count,] = a
+  ts_arima_list[count,] = a 
+  for(m in 1:2){
+    MAPEs_in[m] <- mape(yv,FCs_ss[m,])
+    MASEs_in[m] <- mase(yv,FCs_ss[m,])
+    sMAPE_in[m] <- smape(yv,FCs_ss[m,])
+    if(m==1){
+      ts_ets_list[count,2] = MAPEs_in[m]
+      ts_ets_list[count,3] = MASEs_in[m]
+      ts_ets_list[count,4] = sMAPE_in[m]
+      ts_ets_list[count,5] = bic_ss[m,]
+    }else{
+      ts_arima_list[count,2] = MAPEs_in[m]
+      ts_arima_list[count,3] = MASEs_in[m]
+      ts_arima_list[count,4] = sMAPE_in[m]
+      ts_arima_list[count,5] = bic_ss[m,]
+    }
+  }
+  for(m in 2:5){
+    if(ts_ets_list[count,m] < ts_arima_list[count,m]){
+      ets_count = ets_count + 1
+    }else{
+      arima_count = arima_count + 1
+    }
+  }
+  if(ets_count > arima_count){
+    ts_final_list[count,1] = "ETS"
+  }else{
+    ts_final_list[count,1] = "ARIMA"
+  }
+  for(m in 2:5){
+    if(ts_final_list[count,1] == "ETS"){
+      ts_final_list[count,m] = ts_ets_list[count,m]
+    }else{
+      ts_final_list[count,m] = ts_arima_list[count,m]
+    }
+  }
+
+  count=count + 1
+  a=a+10
+}
+
+for(m in 1:70){
+  if(ts_final_list[m,1] == "ETS"){
+    no_ets_valid = no_ets_valid + 1
+  }else{
+    no_arima_valid = no_arima_valid + 1
+  }
+}
+
+```
+
+
+#trial h=6
+```{r}
+a=702
+horizon <- 8
+mase_array_ss <- array(0,2)
+bic_array_ss <- array(0,2)
+ts_ets_list <- array(0,c(70,5))
+ts_arima_list <- array(0,c(70,5))
+ts_final_list <- array(0,c(70,5))
+count=1
+no_ets = 0 #to know how many ts are ets
+no_arima = 0 #to know how many are arima
+while (a<=1392 & count<=70) {
+  b_in_sample <- M3[[a]]$x
+  b_out_sample <- M3[[a]]$xx
+  ets_count = 0
+  arima_count = 0
+  FCs_ss <- array(0,c(2,horizon))
+  bic_ss <- array(0,c(2,1))
+  for(m in 1:2){
+    if(m==1){
+      fit<-ets(b_in_sample)
+      bic_ss[m,] <- BIC(fit)
+    }else if(m==2){
+      fit<-auto.arima(b_in_sample)
+      bic_ss[m,] <- BIC(fit)
+    }
+    FCs_ss[m,]<-(forecast(fit,h=horizon)$mean)
+  }
+  
+
+  MAPEs_in <- array(0,2)
+  MASEs_in <- array(0,2)
+  sMAPE_in <- array(0,2)
+  bic_in <- array(0,2)
+  ts_ets_list[count,] = a
+  ts_arima_list[count,] = a 
+  for(m in 1:2){
+    MAPEs_in[m] <- mape(b_out_sample,FCs_ss[m,])
+    MASEs_in[m] <- mase(b_out_sample,FCs_ss[m,])
+    sMAPE_in[m] <- smape(b_out_sample,FCs_ss[m,])
+    if(m==1){
+      ts_ets_list[count,2] = MAPEs_in[m]
+      ts_ets_list[count,3] = MASEs_in[m]
+      ts_ets_list[count,4] = sMAPE_in[m]
+      ts_ets_list[count,5] = bic_ss[m,]
+    }else{
+      ts_arima_list[count,2] = MAPEs_in[m]
+      ts_arima_list[count,3] = MASEs_in[m]
+      ts_arima_list[count,4] = sMAPE_in[m]
+      ts_arima_list[count,5] = bic_ss[m,]
+    }
+  }
+  for(m in 2:5){
+    if(ts_ets_list[count,m] < ts_arima_list[count,m]){
+      ets_count = ets_count + 1
+    }else{
+      arima_count = arima_count + 1
+    }
+  }
+  if(ets_count > arima_count){
+    ts_final_list[count,1] = "ETS"
+  }else{
+    ts_final_list[count,1] = "ARIMA"
+  }
+  for(m in 2:5){
+    if(ts_final_list[count,1] == "ETS"){
+      ts_final_list[count,m] = ts_ets_list[count,m]
+    }else{
+      ts_final_list[count,m] = ts_arima_list[count,m]
+    }
+  }
+
+  count=count + 1
+  a=a+10
+}
+
+for(m in 1:70){
+  if(ts_final_list[m,1] == "ETS"){
+    no_ets = no_ets + 1
+  }else{
+    no_arima = no_arima + 1
+  }
+}
+```
+
+
+#test against 3 benchmarks
+
+```{r}
+
+```
+
+#to evaluate against benchmarks
+```{r}
+a=702
+horizon <- 8
+mase_array_ss <- array(0,2)
+bic_array_ss <- array(0,2)
+ts_ets_list <- array(0,c(70,5))
+ts_arima_list <- array(0,c(70,5))
+ts_final_list <- array(0,c(70,5))
+count=1
+no_ets = 0 #to know how many ts are ets
+no_arima = 0 #to know how many are arima
+
+
+
+while (a<=1392 & count<=70) {
+  b_in_sample <- M3[[a]]$x
+  b_out_sample <- M3[[a]]$xx
+  ets_count = 0
+  arima_count = 0
+  FCs_ss <- array(0,c(2,horizon))
+  bic_ss <- array(0,c(2,1))
+  for(m in 1:2){
+    if(m==1){
+      fit<-ets(b_in_sample)
+      bic_ss[m,] <- BIC(fit)
+    }else if(m==2){
+      fit<-auto.arima(b_in_sample)
+      bic_ss[m,] <- BIC(fit)
+    }
+    FCs_ss[m,]<-(forecast(fit,h=horizon)$mean)
+  }
+  
+
+  MAPEs_in <- array(0,2)
+  MASEs_in <- array(0,2)
+  sMAPE_in <- array(0,2)
+  bic_in <- array(0,2)
+  ts_ets_list[count,] = a
+  ts_arima_list[count,] = a 
+  for(m in 1:2){
+    MAPEs_in[m] <- mape(b_out_sample,FCs_ss[m,])
+    MASEs_in[m] <- mase(b_out_sample,FCs_ss[m,])
+    sMAPE_in[m] <- smape(b_out_sample,FCs_ss[m,])
+    if(m==1){
+      ts_ets_list[count,2] = MAPEs_in[m]
+      ts_ets_list[count,3] = MASEs_in[m]
+      ts_ets_list[count,4] = sMAPE_in[m]
+      ts_ets_list[count,5] = bic_ss[m,]
+    }else{
+      ts_arima_list[count,2] = MAPEs_in[m]
+      ts_arima_list[count,3] = MASEs_in[m]
+      ts_arima_list[count,4] = sMAPE_in[m]
+      ts_arima_list[count,5] = bic_ss[m,]
+    }
+  }
+  for(m in 2:5){
+    if(ts_ets_list[count,m] < ts_arima_list[count,m]){
+      ets_count = ets_count + 1
+    }else{
+      arima_count = arima_count + 1
+    }
+  }
+  if(ets_count > arima_count){
+    ts_final_list[count,1] = "ETS"
+  }else{
+    ts_final_list[count,1] = "ARIMA"
+  }
+  for(m in 2:5){
+    if(ts_final_list[count,1] == "ETS"){
+      ts_final_list[count,m] = ts_ets_list[count,m]
+    }else{
+      ts_final_list[count,m] = ts_arima_list[count,m]
+    }
+  }
+
+  count=count + 1
+  a=a+10
+}
+
+custom_mean_mase = 0
+custom_mean_mape = 0
+custom_mean_smape = 0
+
+
+for(m in 1:70){
+  if(ts_final_list[m,1] == "ETS"){    
+    no_ets = no_ets + 1
+  }else{
+    no_arima = no_arima + 1
+  }
+  custom_mean_mase = as.numeric(ts_final_list[m,2]) + custom_mean_mase
+  custom_mean_mape = as.numeric(ts_final_list[m,3]) + custom_mean_mape
+  custom_mean_smape = as.numeric(ts_final_list[m,4]) + custom_mean_smape
+}
+
+custom_mean_mase = custom_mean_mase/70
+custom_mean_mape = custom_mean_mape/70
+custom_mean_smape = custom_mean_smape/70
+
+
+
+```
+
+
+#error values of ets and arima h=8,6,4,2
+```{r}
+a=702
+horizon <- 2
+mase_array_ss <- array(0,2)
+bic_array_ss <- array(0,2)
+ts_ets_list <- array(0,c(70,5))
+ts_arima_list <- array(0,c(70,5))
+ts_final_list <- array(0,c(70,5))
+count=1
+no_ets = 0 #to know how many ts are ets
+no_arima = 0 #to know how many are arima
+
+ets_mean_mase = 0
+ets_mean_mape = 0
+ets_mean_smape = 0
+
+arima_mean_mase = 0
+arima_mean_mape = 0
+arima_mean_smape = 0
+
+while (a<=1392 & count<=70) {
+  b_in_sample <- M3[[a]]$x
+  b_out_sample <- M3[[a]]$xx
+  ets_count = 0
+  arima_count = 0
+  FCs_ss <- array(0,c(2,horizon))
+  bic_ss <- array(0,c(2,1))
+  for(m in 1:2){
+    if(m==1){
+      fit<-ets(b_in_sample)
+      bic_ss[m,] <- BIC(fit)
+    }else if(m==2){
+      fit<-auto.arima(b_in_sample)
+      bic_ss[m,] <- BIC(fit)
+    }
+    FCs_ss[m,]<-(forecast(fit,h=horizon)$mean)
+  }
+  
+  MAPEs_in <- array(0,2)
+  MASEs_in <- array(0,2)
+  sMAPE_in <- array(0,2)
+  bic_in <- array(0,2)
+  ts_ets_list[count,] = a
+  ts_arima_list[count,] = a 
+  for(m in 1:2){
+    MAPEs_in[m] <- mape(b_out_sample,FCs_ss[m,])
+    MASEs_in[m] <- mase(b_out_sample,FCs_ss[m,])
+    sMAPE_in[m] <- smape(b_out_sample,FCs_ss[m,])
+    if(m==1){
+      ts_ets_list[count,2] = MAPEs_in[m]
+      ts_ets_list[count,3] = MASEs_in[m]
+      ts_ets_list[count,4] = sMAPE_in[m]
+      ts_ets_list[count,5] = bic_ss[m,]
+      ets_mean_mase = as.numeric(ts_ets_list[count,2]) + ets_mean_mase
+      ets_mean_mape = as.numeric(ts_ets_list[count,3]) + ets_mean_mape
+      ets_mean_smape = as.numeric(ts_ets_list[count,4]) + ets_mean_smape
+      
+    }else{
+      ts_arima_list[count,2] = MAPEs_in[m]
+      ts_arima_list[count,3] = MASEs_in[m]
+      ts_arima_list[count,4] = sMAPE_in[m]
+      ts_arima_list[count,5] = bic_ss[m,]
+      arima_mean_mase = as.numeric(ts_arima_list[count,2]) + arima_mean_mase
+      arima_mean_mape = as.numeric(ts_arima_list[count,3]) + arima_mean_mape
+      arima_mean_smape = as.numeric(ts_arima_list[count,4]) + arima_mean_smape
+    }
+  }
+  for(m in 2:5){
+    if(ts_ets_list[count,m] < ts_arima_list[count,m]){
+      ets_count = ets_count + 1
+    }else{
+      arima_count = arima_count + 1
+    }
+  }
+  if(ets_count > arima_count){
+    ts_final_list[count,1] = "ETS"
+  }else{
+    ts_final_list[count,1] = "ARIMA"
+  }
+  for(m in 2:5){
+    if(ts_final_list[count,1] == "ETS"){
+      ts_final_list[count,m] = ts_ets_list[count,m]
+    }else{
+      ts_final_list[count,m] = ts_arima_list[count,m]
+    }
+  }
+
+  count=count + 1
+  a=a+10
+}
+
+for(m in 1:70){
+  if(ts_final_list[m,1] == "ETS"){
+    no_ets = no_ets + 1
+
+  }else{
+    no_arima = no_arima + 1
+  }
+}
+
+ets_mean_mase = ets_mean_mase/70
+ets_mean_mape = ets_mean_mape/70
+ets_mean_smape = ets_mean_smape/70
+
+arima_mean_mase = arima_mean_mase/70
+arima_mean_mape = arima_mean_mape/70
+arima_mean_smape = arima_mean_smape/70
+```
+
+
+#naive, holt, hw alter h = 8,6,4,2 & holt to hw
+```{r}
+a=702
+horizon <- 2
+mase_array_ss <- array(0,2)
+bic_array_ss <- array(0,2)
+ts_ets_list <- array(0,c(70,5))
+ts_arima_list <- array(0,c(70,5))
+ts_final_list <- array(0,c(70,5))
+count=1
+no_ets = 0 #to know how many ts are ets
+no_arima = 0 #to know how many are arima
+
+ets_mean_mase = 0
+ets_mean_mape = 0
+ets_mean_smape = 0
+
+arima_mean_mase = 0
+arima_mean_mape = 0
+arima_mean_smape = 0
+
+while (a<=1392 & count<=70) {
+  b_in_sample <- M3[[a]]$x
+  b_out_sample <- M3[[a]]$xx
+  ets_count = 0
+  arima_count = 0
+  FCs_ss <- array(0,c(2,horizon))
+  bic_ss <- array(0,c(2,1))
+  for(m in 1:2){
+    if(m==1){
+      fit<- naive(b_in_sample)
+      #bic_ss[m,] <- BIC(fit$model)
+    }else if(m==2){
+      fit<- holt(b_in_sample)
+      #bic_ss[m,] <- BIC(fit$model)
+    }
+    FCs_ss[m,]<-(forecast(fit,h=horizon)$mean)
+  }
+  
+
+  MAPEs_in <- array(0,2)
+  MASEs_in <- array(0,2)
+  sMAPE_in <- array(0,2)
+  bic_in <- array(0,2)
+  ts_ets_list[count,] = a
+  ts_arima_list[count,] = a 
+  for(m in 1:2){
+    MAPEs_in[m] <- mape(b_out_sample,FCs_ss[m,])
+    MASEs_in[m] <- mase(b_out_sample,FCs_ss[m,])
+    sMAPE_in[m] <- smape(b_out_sample,FCs_ss[m,])
+    if(m==1){
+      ts_ets_list[count,2] = MAPEs_in[m]
+      ts_ets_list[count,3] = MASEs_in[m]
+      ts_ets_list[count,4] = sMAPE_in[m]
+      #ts_ets_list[count,5] = bic_ss[m,]
+      ets_mean_mase = as.numeric(ts_ets_list[count,2]) + ets_mean_mase
+      ets_mean_mape = as.numeric(ts_ets_list[count,3]) + ets_mean_mape
+      ets_mean_smape = as.numeric(ts_ets_list[count,4]) + ets_mean_smape
+      
+    }else{
+      ts_arima_list[count,2] = MAPEs_in[m]
+      ts_arima_list[count,3] = MASEs_in[m]
+      ts_arima_list[count,4] = sMAPE_in[m]
+      #ts_arima_list[count,5] = bic_ss[m,]
+      arima_mean_mase = as.numeric(ts_arima_list[count,2]) + arima_mean_mase
+      arima_mean_mape = as.numeric(ts_arima_list[count,3]) + arima_mean_mape
+      arima_mean_smape = as.numeric(ts_arima_list[count,4]) + arima_mean_smape
+    }
+  }
+  for(m in 2:5){
+    if(ts_ets_list[count,m] < ts_arima_list[count,m]){
+      ets_count = ets_count + 1
+    }else{
+      arima_count = arima_count + 1
+    }
+  }
+  if(ets_count > arima_count){
+    ts_final_list[count,1] = "ETS"
+  }else{
+    ts_final_list[count,1] = "ARIMA"
+  }
+  for(m in 2:5){
+    if(ts_final_list[count,1] == "ETS"){
+      ts_final_list[count,m] = ts_ets_list[count,m]
+    }else{
+      ts_final_list[count,m] = ts_arima_list[count,m]
+    }
+  }
+
+  count=count + 1
+  a=a+10
+}
+
+for(m in 1:70){
+  if(ts_final_list[m,1] == "ETS"){
+    no_ets = no_ets + 1
+
+  }else{
+    no_arima = no_arima + 1
+  }
+}
+
+ets_mean_mase = ets_mean_mase/70
+ets_mean_mape = ets_mean_mape/70
+ets_mean_smape = ets_mean_smape/70
+
+arima_mean_mase = arima_mean_mase/70
+arima_mean_mape = arima_mean_mape/70
+arima_mean_smape = arima_mean_smape/70
+```
+
+
+
+#for different types ;  evaluating the error measures - benchmark
+```{r}
+a=702
+horizon <- 8
+mase_array_ss <- array(0,2)
+bic_array_ss <- array(0,2)
+ts_ets_list <- array(0,c(70,6))
+ts_arima_list <- array(0,c(70,6))
+ts_final_list <- array(0,c(70,6))
+count=1
+no_ets = 0 #to know how many ts are ets
+no_arima = 0 #to know how many are arima
+
+
+
+while (a<=1392 & count<=70) {
+  b_in_sample <- M3[[a]]$x
+  b_out_sample <- M3[[a]]$xx
+  ets_count = 0
+  arima_count = 0
+  FCs_ss <- array(0,c(2,horizon))
+  bic_ss <- array(0,c(2,1))
+  for(m in 1:2){
+    if(m==1){
+      fit<-ets(b_in_sample)
+      bic_ss[m,] <- BIC(fit)
+    }else if(m==2){
+      fit<-auto.arima(b_in_sample)
+      bic_ss[m,] <- BIC(fit)
+    }
+    FCs_ss[m,]<-(forecast(fit,h=horizon)$mean)
+  }
+  
+
+  MAPEs_in <- array(0,2)
+  MASEs_in <- array(0,2)
+  sMAPE_in <- array(0,2)
+  bic_in <- array(0,2)
+  ts_ets_list[count,] = a
+  ts_ets_list[count,6] = M3[[a]]$type
+  ts_arima_list[count,] = a 
+  ts_arima_list[count,6] = M3[[a]]$type
+  for(m in 1:2){
+    MAPEs_in[m] <- mape(b_out_sample,FCs_ss[m,])
+    MASEs_in[m] <- mase(b_out_sample,FCs_ss[m,])
+    sMAPE_in[m] <- smape(b_out_sample,FCs_ss[m,])
+    if(m==1){
+      ts_ets_list[count,2] = MAPEs_in[m]
+      ts_ets_list[count,3] = MASEs_in[m]
+      ts_ets_list[count,4] = sMAPE_in[m]
+      ts_ets_list[count,5] = bic_ss[m,]
+    }else{
+      ts_arima_list[count,2] = MAPEs_in[m]
+      ts_arima_list[count,3] = MASEs_in[m]
+      ts_arima_list[count,4] = sMAPE_in[m]
+      ts_arima_list[count,5] = bic_ss[m,]
+    }
+  }
+  for(m in 2:5){
+    if(ts_ets_list[count,m] < ts_arima_list[count,m]){
+      ets_count = ets_count + 1
+    }else{
+      arima_count = arima_count + 1
+    }
+  }
+  if(ets_count > arima_count){
+    ts_final_list[count,1] = "ETS"
+  }else{
+    ts_final_list[count,1] = "ARIMA"
+  }
+  for(m in 2:5){
+    if(ts_final_list[count,1] == "ETS"){
+      ts_final_list[count,m] = ts_ets_list[count,m]
+    }else{
+      ts_final_list[count,m] = ts_arima_list[count,m]
+    }
+  }
+  ts_final_list[count,6]=M3[[a]]$type
+  count=count + 1
+  a=a+10
+}
+
+custom_mean_mase = 0
+custom_mean_mape = 0
+custom_mean_smape = 0
+
+category_mean_mase = 0
+category_mean_mape = 0
+category_mean_smape = 0
+
+for(m in 1:70){
+  if(ts_final_list[m,1] == "ETS"){    
+    no_ets = no_ets + 1
+  }else{
+    no_arima = no_arima + 1
+  }
+  
+  if(ts_final_list[m,6] == 'INDUSTRY'){
+    category_mean_mase = as.numeric(ts_final_list[m,2]) + category_mean_mase
+    category_mean_mape = as.numeric(ts_final_list[m,3]) + category_mean_mape
+    category_mean_smape = as.numeric(ts_final_list[m,4]) + category_mean_smape
+  }
+}
+
+category_mean_mase = category_mean_mase/70
+category_mean_mape = category_mean_mape/70
+category_mean_smape = category_mean_smape/70
+
+
+```
+
+
+#for ets and arima - 5 types
+```{r}
+
+a=702
+horizon <- 8
+mase_array_ss <- array(0,2)
+bic_array_ss <- array(0,2)
+ts_ets_list <- array(0,c(70,6))
+ts_arima_list <- array(0,c(70,6))
+ts_final_list <- array(0,c(70,6))
+count=1
+no_ets = 0 #to know how many ts are ets
+no_arima = 0 #to know how many are arima
+
+ets_mean_mase = 0
+ets_mean_mape = 0
+ets_mean_smape = 0
+
+arima_mean_mase = 0
+arima_mean_mape = 0
+arima_mean_smape = 0
+
+while (a<=1392 & count<=70) {
+  b_in_sample <- M3[[a]]$x
+  b_out_sample <- M3[[a]]$xx
+  ets_count = 0
+  arima_count = 0
+  FCs_ss <- array(0,c(2,horizon))
+  bic_ss <- array(0,c(2,1))
+  for(m in 1:2){
+    if(m==1){
+      fit<-ets(b_in_sample)
+      #bic_ss[m,] <- BIC(fit)
+    }else if(m==2){
+      fit<-auto.arima(b_in_sample)
+      #bic_ss[m,] <- BIC(fit)
+    }
+    FCs_ss[m,]<-(forecast(fit,h=horizon)$mean)
+  }
+  
+  MAPEs_in <- array(0,2)
+  MASEs_in <- array(0,2)
+  sMAPE_in <- array(0,2)
+  bic_in <- array(0,2)
+  ts_ets_list[count,] = a
+  ts_arima_list[count,] = a 
+  ts_ets_list[count,6] = M3[[a]]$type
+  ts_arima_list[count,6] = M3[[a]]$type
+  for(m in 1:2){
+    MAPEs_in[m] <- mape(b_out_sample,FCs_ss[m,])
+    MASEs_in[m] <- mase(b_out_sample,FCs_ss[m,])
+    sMAPE_in[m] <- smape(b_out_sample,FCs_ss[m,])
+    if(m==1){
+      ts_ets_list[count,2] = MAPEs_in[m]
+      ts_ets_list[count,3] = MASEs_in[m]
+      ts_ets_list[count,4] = sMAPE_in[m]
+      ts_ets_list[count,5] = bic_ss[m,]
+      if(ts_ets_list[count,6] == "INDUSTRY"){
+        ets_mean_mase = as.numeric(ts_ets_list[count,2]) + ets_mean_mase
+        ets_mean_mape = as.numeric(ts_ets_list[count,3]) + ets_mean_mape
+        ets_mean_smape = as.numeric(ts_ets_list[count,4]) + ets_mean_smape
+      }
+    }else{
+      ts_arima_list[count,2] = MAPEs_in[m]
+      ts_arima_list[count,3] = MASEs_in[m]
+      ts_arima_list[count,4] = sMAPE_in[m]
+      ts_arima_list[count,5] = bic_ss[m,]
+      if(ts_ets_list[count,6] == "INDUSTRY"){
+        arima_mean_mase = as.numeric(ts_arima_list[m,2]) + arima_mean_mase
+        arima_mean_mape = as.numeric(ts_arima_list[m,3]) + arima_mean_mape
+        arima_mean_smape = as.numeric(ts_arima_list[m,4]) + arima_mean_smape
+      }
+
+    }
+  }
+  for(m in 2:5){
+    if(ts_ets_list[count,m] < ts_arima_list[count,m]){
+      ets_count = ets_count + 1
+    }else{
+      arima_count = arima_count + 1
+    }
+  }
+  if(ets_count > arima_count){
+    ts_final_list[count,1] = "ETS"
+  }else{
+    ts_final_list[count,1] = "ARIMA"
+  }
+  for(m in 2:5){
+    if(ts_final_list[count,1] == "ETS"){
+      ts_final_list[count,m] = ts_ets_list[count,m]
+    }else{
+      ts_final_list[count,m] = ts_arima_list[count,m]
+    }
+  }
+
+  count=count + 1
+  a=a+10
+}
+
+for(m in 1:70){
+  if(ts_final_list[m,1] == "ETS"){
+    no_ets = no_ets + 1
+
+  }else{
+    no_arima = no_arima + 1
+  }
+}
+
+ets_mean_mase = ets_mean_mase/70
+ets_mean_mape = ets_mean_mape/70
+ets_mean_smape = ets_mean_smape/70
+
+arima_mean_mase = arima_mean_mase/70
+arima_mean_mape = arima_mean_mape/70
+arima_mean_smape = arima_mean_smape/70
+```
+
+
+
+#naive, holt, hw
+```{r}
+a=702
+horizon <- 8
+mase_array_ss <- array(0,2)
+bic_array_ss <- array(0,2)
+ts_ets_list <- array(0,c(70,6))
+ts_arima_list <- array(0,c(70,6))
+ts_final_list <- array(0,c(70,6))
+count=1
+no_ets = 0 #to know how many ts are ets
+no_arima = 0 #to know how many are arima
+
+ets_mean_mase = 0
+ets_mean_mape = 0
+ets_mean_smape = 0
+
+arima_mean_mase = 0
+arima_mean_mape = 0
+arima_mean_smape = 0
+
+while (a<=1392 & count<=70) {
+  b_in_sample <- M3[[a]]$x
+  b_out_sample <- M3[[a]]$xx
+  ets_count = 0
+  arima_count = 0
+  FCs_ss <- array(0,c(2,horizon))
+  bic_ss <- array(0,c(2,1))
+  for(m in 1:2){
+    if(m==1){
+      fit<-naive(b_in_sample)
+      #bic_ss[m,] <- BIC(fit)
+    }else if(m==2){
+      fit<-hw(b_in_sample)
+      #bic_ss[m,] <- BIC(fit)
+    }
+    FCs_ss[m,]<-(forecast(fit,h=horizon)$mean)
+  }
+  
+  MAPEs_in <- array(0,2)
+  MASEs_in <- array(0,2)
+  sMAPE_in <- array(0,2)
+  bic_in <- array(0,2)
+  ts_ets_list[count,] = a
+  ts_arima_list[count,] = a 
+  ts_ets_list[count,6] = M3[[a]]$type
+  ts_arima_list[count,6] = M3[[a]]$type
+  for(m in 1:2){
+    MAPEs_in[m] <- mape(b_out_sample,FCs_ss[m,])
+    MASEs_in[m] <- mase(b_out_sample,FCs_ss[m,])
+    sMAPE_in[m] <- smape(b_out_sample,FCs_ss[m,])
+    if(m==1){
+      ts_ets_list[count,2] = MAPEs_in[m]
+      ts_ets_list[count,3] = MASEs_in[m]
+      ts_ets_list[count,4] = sMAPE_in[m]
+      ts_ets_list[count,5] = bic_ss[m,]
+      if(ts_ets_list[count,6] == "MICRO"){
+        ets_mean_mase = as.numeric(ts_ets_list[count,2]) + ets_mean_mase
+        ets_mean_mape = as.numeric(ts_ets_list[count,3]) + ets_mean_mape
+        ets_mean_smape = as.numeric(ts_ets_list[count,4]) + ets_mean_smape
+      }
+    }else{
+      ts_arima_list[count,2] = MAPEs_in[m]
+      ts_arima_list[count,3] = MASEs_in[m]
+      ts_arima_list[count,4] = sMAPE_in[m]
+      ts_arima_list[count,5] = bic_ss[m,]
+      if(ts_ets_list[count,6] == "MICRO"){
+        arima_mean_mase = as.numeric(ts_arima_list[m,2]) + arima_mean_mase
+        arima_mean_mape = as.numeric(ts_arima_list[m,3]) + arima_mean_mape
+        arima_mean_smape = as.numeric(ts_arima_list[m,4]) + arima_mean_smape
+      }
+
+    }
+  }
+  for(m in 2:5){
+    if(ts_ets_list[count,m] < ts_arima_list[count,m]){
+      ets_count = ets_count + 1
+    }else{
+      arima_count = arima_count + 1
+    }
+  }
+  if(ets_count > arima_count){
+    ts_final_list[count,1] = "ETS"
+  }else{
+    ts_final_list[count,1] = "ARIMA"
+  }
+  for(m in 2:5){
+    if(ts_final_list[count,1] == "ETS"){
+      ts_final_list[count,m] = ts_ets_list[count,m]
+    }else{
+      ts_final_list[count,m] = ts_arima_list[count,m]
+    }
+  }
+
+  count=count + 1
+  a=a+10
+}
+
+for(m in 1:70){
+  if(ts_final_list[m,1] == "ETS"){
+    no_ets = no_ets + 1
+
+  }else{
+    no_arima = no_arima + 1
+  }
+}
+
+ets_mean_mase = ets_mean_mase/70
+ets_mean_mape = ets_mean_mape/70
+ets_mean_smape = ets_mean_smape/70
+
+arima_mean_mase = arima_mean_mase/70
+arima_mean_mape = arima_mean_mape/70
+arima_mean_smape = arima_mean_smape/70
+```
+
